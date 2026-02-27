@@ -245,20 +245,63 @@ if uploaded_file:
     # ==========================================================
     # TAB 3 — CLUSTERING & 2D
     # ==========================================================
+    # ==========================================================
+    # TAB 3 — ADVANCED CLUSTERING & 2D VISUALIZATION
+    # ==========================================================
     with tab3:
 
-        st.subheader("2D PCA Projection + KMeans Clustering")
+        st.subheader("🔬 Advanced 2D Projection & Cluster Regions")
 
+        # Preprocess
         X_processed = preprocessor.fit_transform(X)
 
+        # PCA Projection
         pca = PCA(n_components=2)
         X_2d = pca.fit_transform(X_processed)
 
-        n_clusters = st.slider("Number of Clusters", 2, 10, 3)
+        st.write("Explained Variance Ratio:", pca.explained_variance_ratio_)
 
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-        cluster_labels = kmeans.fit_predict(X_2d)
+        # --------------------------------------------
+        # CLUSTERING METHOD SELECTION
+        # --------------------------------------------
+        clustering_method = st.selectbox(
+            "Select Clustering Algorithm",
+            ["KMeans", "Agglomerative", "Spectral"]
+        )
 
+        max_clusters = st.slider("Number of Clusters", 2, 15, 5)
+
+        # --------------------------------------------
+        # FIT CLUSTERING
+        # --------------------------------------------
+        if clustering_method == "KMeans":
+            model_cluster = KMeans(n_clusters=max_clusters, random_state=42)
+
+        elif clustering_method == "Agglomerative":
+            from sklearn.cluster import AgglomerativeClustering
+            model_cluster = AgglomerativeClustering(n_clusters=max_clusters)
+
+        elif clustering_method == "Spectral":
+            from sklearn.cluster import SpectralClustering
+            model_cluster = SpectralClustering(
+                n_clusters=max_clusters,
+                assign_labels="kmeans",
+                random_state=42
+            )
+
+        cluster_labels = model_cluster.fit_predict(X_2d)
+
+        # --------------------------------------------
+        # SILHOUETTE SCORE
+        # --------------------------------------------
+        from sklearn.metrics import silhouette_score
+
+        sil_score = silhouette_score(X_2d, cluster_labels)
+        st.write("Silhouette Score:", round(sil_score, 4))
+
+        # --------------------------------------------
+        # SCATTER VISUALIZATION
+        # --------------------------------------------
         plot_df = pd.DataFrame({
             "PC1": X_2d[:, 0],
             "PC2": X_2d[:, 1],
@@ -270,30 +313,105 @@ if uploaded_file:
             x="PC1",
             y="PC2",
             color="Cluster",
-            title="PCA 2D Clusters"
+            title="Cluster Visualization (PCA 2D)",
+            opacity=0.8
         )
+
         st.plotly_chart(fig, use_container_width=True)
 
-        # Decision Region
-        st.subheader("Cluster Decision Regions")
+        # --------------------------------------------
+        # DECISION REGION VISUALIZATION
+        # --------------------------------------------
+        st.subheader("🗺 Cluster Decision Regions")
 
-        h = 0.05
+        resolution = st.slider("Region Resolution (Higher = Smoother)", 50, 500, 200)
+
         x_min, x_max = X_2d[:, 0].min() - 1, X_2d[:, 0].max() + 1
         y_min, y_max = X_2d[:, 1].min() - 1, X_2d[:, 1].max() + 1
 
         xx, yy = np.meshgrid(
-            np.arange(x_min, x_max, h),
-            np.arange(y_min, y_max, h)
+            np.linspace(x_min, x_max, resolution),
+            np.linspace(y_min, y_max, resolution)
         )
 
-        Z = kmeans.predict(np.c_[xx.ravel(), yy.ravel()])
+        grid_points = np.c_[xx.ravel(), yy.ravel()]
+
+        # Some clustering models don't support predict()
+        if hasattr(model_cluster, "predict"):
+            Z = model_cluster.predict(grid_points)
+        else:
+            # For Agglomerative / Spectral, approximate using KNN classifier
+            from sklearn.neighbors import KNeighborsClassifier
+            knn = KNeighborsClassifier(n_neighbors=5)
+            knn.fit(X_2d, cluster_labels)
+            Z = knn.predict(grid_points)
+
         Z = Z.reshape(xx.shape)
 
-        fig_region, ax = plt.subplots()
-        ax.contourf(xx, yy, Z, alpha=0.3)
-        ax.scatter(X_2d[:, 0], X_2d[:, 1], c=cluster_labels, edgecolor="k")
-        ax.set_title("Cluster Regions (2D)")
+        fig_region, ax = plt.subplots(figsize=(8, 6))
+        ax.contourf(xx, yy, Z, alpha=0.35, cmap="viridis")
+        ax.scatter(
+            X_2d[:, 0],
+            X_2d[:, 1],
+            c=cluster_labels,
+            cmap="viridis",
+            edgecolor="k"
+        )
+
+        ax.set_title(f"{clustering_method} Cluster Regions (2D PCA)")
+        ax.set_xlabel("PC1")
+        ax.set_ylabel("PC2")
+
         st.pyplot(fig_region)
+    # with tab3:
+
+    #     st.subheader("2D PCA Projection + KMeans Clustering")
+
+    #     X_processed = preprocessor.fit_transform(X)
+
+    #     pca = PCA(n_components=2)
+    #     X_2d = pca.fit_transform(X_processed)
+
+    #     n_clusters = st.slider("Number of Clusters", 2, 10, 3)
+
+    #     kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+    #     cluster_labels = kmeans.fit_predict(X_2d)
+
+    #     plot_df = pd.DataFrame({
+    #         "PC1": X_2d[:, 0],
+    #         "PC2": X_2d[:, 1],
+    #         "Cluster": cluster_labels.astype(str)
+    #     })
+
+    #     fig = px.scatter(
+    #         plot_df,
+    #         x="PC1",
+    #         y="PC2",
+    #         color="Cluster",
+    #         title="PCA 2D Clusters"
+    #     )
+    #     st.plotly_chart(fig, use_container_width=True)
+
+    #     # Decision Region
+    #     st.subheader("Cluster Decision Regions")
+
+    #     h = 0.05
+    #     x_min, x_max = X_2d[:, 0].min() - 1, X_2d[:, 0].max() + 1
+    #     y_min, y_max = X_2d[:, 1].min() - 1, X_2d[:, 1].max() + 1
+
+    #     xx, yy = np.meshgrid(
+    #         np.arange(x_min, x_max, h),
+    #         np.arange(y_min, y_max, h)
+    #     )
+
+    #     Z = kmeans.predict(np.c_[xx.ravel(), yy.ravel()])
+    #     Z = Z.reshape(xx.shape)
+
+    #     fig_region, ax = plt.subplots()
+    #     ax.contourf(xx, yy, Z, alpha=0.3)
+    #     ax.scatter(X_2d[:, 0], X_2d[:, 1], c=cluster_labels, edgecolor="k")
+    #     ax.set_title("Cluster Regions (2D)")
+    #     st.pyplot(fig_region)
 
 # import streamlit as st
 # import pandas as pd
